@@ -1,0 +1,138 @@
+version: '3.9'
+
+services:
+  app:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    ports:
+      - 8000:80
+      - "443:443"
+    volumes:
+      - ./src:/var/www
+      - ./dockerfiles/nginx/conf.d/:/etc/nginx/conf.d/
+    depends_on:
+      - php
+      - db
+      - redis
+      - mailhog
+    networks:
+      - app-network
+  
+  php:
+    build:
+      context: ./dockerfiles/php
+      dockerfile: Dockerfile
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./src:/var/www:delegated
+    networks:
+      - app-network
+
+  db:
+    image: mariadb:10.6
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-homestead}
+      MYSQL_USER: ${DB_USERNAME:-homestead}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-secret}
+      SERVICE_TAGS: ${SERVICE_TAGS:-dev}
+      SERVICE_NAME: ${SERVICE_NAME:-db}
+    volumes:
+      - dbdata:/var/lib/mysql/
+      - ./dockerfiles/mysql/my.cnf:/etc/mysql/my.cnf
+      - ./dockerfiles/mysql/docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
+    networks:
+      - app-network
+
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis:/data
+      - ./dockerfiles/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - app-network
+
+  composer:
+    build:
+      context: ./dockerfiles/php
+      dockerfile: Dockerfile
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+    volumes:
+      - ./src:/var/www
+    depends_on:
+      - php
+    entrypoint: [ 'composer', '--ignore-platform-reqs' ]
+    networks:
+      - app-network
+
+  npm:
+    image: node:current-alpine
+    volumes:
+      - ./src:/var/www
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+      - "5173:5173"
+    working_dir: /var/www
+    entrypoint: [ 'npm' ]
+    networks:
+      - app-network
+
+  artisan:
+    build:
+      context: ./dockerfiles/php
+      dockerfile: Dockerfile
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+    volumes:
+      - ./src:/var/www:delegated
+    depends_on:
+      - db
+    entrypoint: [ 'php', '/var/www/artisan' ]
+    networks:
+      - app-network
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - app-network
+      
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "8001:80"
+    environment:
+      PMA_HOST: db
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-secret}
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  dbdata:
+    driver: local
+  redis:
+    driver: "local"
