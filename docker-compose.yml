@@ -1,7 +1,7 @@
 version: '3.9'
 
 services:
-  app:
+  web:
     image: nginx:stable-alpine
     restart: unless-stopped
     ports:
@@ -11,14 +11,14 @@ services:
       - ./src:/var/www
       - ./dockerfiles/nginx/conf.d/:/etc/nginx/conf.d/
     depends_on:
-      - php
+      - app
       - db
       - redis
       - mailhog
     networks:
       - app-network
   
-  php:
+  app:
     build:
       context: ./dockerfiles/php
       dockerfile: Dockerfile
@@ -63,21 +63,14 @@ services:
     networks:
       - app-network
 
-  composer:
-    build:
-      context: ./dockerfiles/php
-      dockerfile: Dockerfile
-      args:
-        - UID=${UID:-1000}
-        - GID=${GID:-1000}
-    volumes:
-      - ./src:/var/www
-    depends_on:
-      - php
-    entrypoint: [ 'composer', '--ignore-platform-reqs' ]
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
     networks:
       - app-network
-
+ 
   npm:
     image: node:current-alpine
     volumes:
@@ -91,29 +84,6 @@ services:
     networks:
       - app-network
 
-  artisan:
-    build:
-      context: ./dockerfiles/php
-      dockerfile: Dockerfile
-      args:
-        - UID=${UID:-1000}
-        - GID=${GID:-1000}
-    volumes:
-      - ./src:/var/www:delegated
-    depends_on:
-      - db
-    entrypoint: [ 'php', '/var/www/artisan' ]
-    networks:
-      - app-network
-
-  mailhog:
-    image: mailhog/mailhog:latest
-    ports:
-      - "1025:1025"
-      - "8025:8025"
-    networks:
-      - app-network
-      
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     restart: unless-stopped
