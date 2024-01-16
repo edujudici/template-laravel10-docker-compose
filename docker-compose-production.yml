@@ -4,47 +4,44 @@ services:
   web:
     image: nginx:stable-alpine
     restart: unless-stopped
-    ports:
-      - 8000:80
-      - "443:443"
+    expose:
+      - 80
     volumes:
       - ./src:/var/www
       - ./dockerfiles/nginx/conf.d/:/etc/nginx/conf.d/
+    environment:
+      VIRTUAL_HOST: ${VIRTUAL_HOST}
+      LETSENCRYPT_HOST: ${LETSENCRYPT_HOST}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL}
     depends_on:
       - app
       - db
       - redis
-      - mailhog
     networks:
       - app-network
+      - proxy
 
   app:
     build:
-      dockerfile: ./dockerfiles/php/root.Dockerfile
-    ports:
-      - "9000:9000"
+      dockerfile: ./dockerfiles/php/Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+        USER: ${USER:-www}
+    image: <repo-name-here>-app
+    container_name: <repo-name-here>_app
+    restart: unless-stopped
     volumes:
       - ./src:/var/www:delegated
+      - ../shared/storage:/var/www/storage:delegated
+      - ../shared/.env:/var/www/.env
     networks:
       - app-network
-
-  supervisor:
-    image: <repo-name-here>-app
-    depends_on:
-      - web
-      - app
-    volumes:
-      - ./src:/var/www
-    networks:
-      - app-network
-    command: supervisord -c /etc/supervisor/conf.d/supervisord.conf
 
   db:
     image: mariadb:10.6
     restart: unless-stopped
     tty: true
-    ports:
-      - "3306:3306"
     environment:
       MYSQL_DATABASE: ${DB_DATABASE:-homestead}
       MYSQL_USER: ${DB_USERNAME:-homestead}
@@ -69,14 +66,20 @@ services:
       - ./dockerfiles/redis/redis.conf:/usr/local/etc/redis/redis.conf
     networks:
       - app-network
+    command: redis-server --requirepass ${REDIS_PASSWORD}
 
-  mailhog:
-    image: mailhog/mailhog:latest
-    ports:
-      - "1025:1025"
-      - "8025:8025"
+  supervisor:
+    image: <repo-name-here>-v3-app
+    depends_on:
+      - web
+      - app
+    volumes:
+      - ./src:/var/www:delegated
+      - ../shared/storage:/var/www/storage:delegated
+      - ../shared/.env:/var/www/.env
     networks:
       - app-network
+    command: supervisord -c /etc/supervisor/conf.d/supervisord.conf
 
   npm:
     image: node:current-alpine
@@ -91,25 +94,18 @@ services:
     networks:
       - app-network
 
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    restart: unless-stopped
-    depends_on:
-      - db
-    ports:
-      - "8001:80"
-    environment:
-      PMA_HOST: db
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-secret}
-    networks:
-      - app-network
-
 networks:
+  proxy:
+    name: nginx-proxy
+    external: true
   app-network:
+    name: <repo-name-here>_network
     driver: bridge
 
 volumes:
   dbdata:
+    name: <repo-name-here>_dbdata
     driver: local
   redis:
+    name: <repo-name-here>_redis
     driver: "local"
